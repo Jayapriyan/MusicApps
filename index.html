@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Musical Balloon Order</title>
+  <script src="https://unpkg.com/htmx.org@2.0.4" defer></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172554;
+      --muted: #526179;
+      --panel: rgba(255,255,255,.88);
+      --accent: #6d28d9;
+      --accent2: #0891b2;
+      --good: #15803d;
+      --bad: #be123c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, ui-rounded, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: linear-gradient(#9ee7ff 0%, #d7f4ff 60%, #e5f7d2 60%, #b8df87 100%);
+      overflow: hidden;
+    }
+    button, select { font: inherit; }
+    button { touch-action: manipulation; }
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+    }
+    .screen {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+    }
+    .panel {
+      width: min(940px, 100%);
+      padding: clamp(20px, 4vw, 42px);
+      border: 1px solid rgba(255,255,255,.75);
+      border-radius: 30px;
+      background: var(--panel);
+      box-shadow: 0 24px 80px rgba(23,37,84,.22);
+      backdrop-filter: blur(12px);
+    }
+    h1, h2, p { margin-top: 0; }
+    h1 { font-size: clamp(2.1rem, 6vw, 4.6rem); line-height: .95; letter-spacing: -.06em; margin-bottom: 16px; }
+    .lead { color: var(--muted); font-size: 1.08rem; max-width: 680px; }
+    .mode-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 18px; margin: 28px 0; }
+    .mode-card {
+      border: 0; border-radius: 24px; padding: 26px; text-align: left; color: white;
+      min-height: 190px; cursor: pointer; box-shadow: 0 14px 30px rgba(23,37,84,.18);
+      transition: transform .18s ease, box-shadow .18s ease;
+    }
+    .mode-card:hover, .mode-card:focus-visible { transform: translateY(-5px); box-shadow: 0 20px 38px rgba(23,37,84,.25); outline: 4px solid white; }
+    .mode-card.sharps { background: linear-gradient(145deg,#7c3aed,#4338ca); }
+    .mode-card.flats { background: linear-gradient(145deg,#0891b2,#0f766e); }
+    .mode-card strong, .mode-card span { display: block; }
+    .mode-card strong { font-size: 1.6rem; margin: 12px 0 8px; }
+    .mode-card .symbol { font-size: 3rem; }
+    .mode-card small { opacity: .9; font-size: .95rem; }
+    .setup-row { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+    select, .secondary, .primary {
+      border-radius: 14px; padding: 11px 15px; border: 1px solid #bdc8dd; background: white; color: var(--ink);
+    }
+    .primary { color: white; background: var(--accent); border-color: transparent; cursor: pointer; font-weight: 800; }
+    .secondary { cursor: pointer; font-weight: 700; }
+    #gameScreen { display: none; padding: 0; }
+    .game-shell { min-height: 100vh; display: grid; grid-template-rows: auto auto 1fr; }
+    .hud {
+      display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 8px;
+      padding: 10px; background: rgba(255,255,255,.92); box-shadow: 0 5px 20px rgba(23,37,84,.13); z-index: 20;
+    }
+    .stat { padding: 7px 10px; border-radius: 12px; background: #f4f7ff; text-align: center; min-width: 0; }
+    .stat span { display: block; color: var(--muted); font-size: .7rem; text-transform: uppercase; letter-spacing: .08em; }
+    .stat strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .progress-wrap { background: rgba(255,255,255,.78); padding: 10px 14px; display: grid; gap: 7px; z-index: 19; }
+    .sequence { display: flex; justify-content: center; gap: 7px; flex-wrap: wrap; }
+    .note-chip {
+      min-width: 38px; padding: 7px 10px; text-align: center; border-radius: 999px;
+      background: #e7ecf8; color: #50607e; font-weight: 900; border: 2px solid transparent;
+    }
+    .note-chip.done { background: #dcfce7; color: var(--good); }
+    .note-chip.current { background: #fff; color: var(--accent); border-color: var(--accent); transform: scale(1.08); }
+    .game-area { position: relative; overflow: hidden; min-height: 0; }
+    .cloud { position: absolute; width: 130px; height: 42px; border-radius: 50px; background: rgba(255,255,255,.55); filter: blur(.4px); }
+    .cloud::before, .cloud::after { content:""; position:absolute; background:inherit; border-radius:50%; }
+    .cloud::before { width:55px; height:55px; left:20px; top:-25px; }
+    .cloud::after { width:75px; height:65px; right:10px; top:-32px; }
+    .balloon {
+      --color: #ef4444;
+      position: absolute; bottom: -150px; width: 78px; height: 92px; border: 0; border-radius: 50% 50% 46% 46%;
+      color: white; background: radial-gradient(circle at 30% 23%, rgba(255,255,255,.85) 0 7%, var(--color) 23% 100%);
+      box-shadow: inset -10px -14px 15px rgba(0,0,0,.14), 0 8px 16px rgba(23,37,84,.18);
+      font-size: 2.15rem; font-weight: 950; cursor: pointer; animation: fly linear forwards;
+      display: grid; place-items: center;
+    }
+    .balloon::before { content:""; position:absolute; bottom:-9px; border-left:8px solid transparent; border-right:8px solid transparent; border-top:13px solid var(--color); }
+    .balloon::after { content:""; position:absolute; width:1px; height:58px; background:rgba(65,50,45,.55); bottom:-66px; }
+    .balloon:hover, .balloon:focus-visible { filter: brightness(1.08); outline: 4px solid white; }
+    .balloon.correct { animation: pop .24s ease-out forwards; }
+    .balloon.wrong { animation: shake .28s ease; }
+    @keyframes fly { to { transform: translateY(calc(-100vh - 190px)) rotate(7deg); } }
+    @keyframes pop { 70% { transform: scale(1.28); opacity: .8; } 100% { transform: scale(.1); opacity: 0; } }
+    @keyframes shake { 25%{translate:-7px 0} 50%{translate:7px 0} 75%{translate:-4px 0} }
+    .game-actions { position: absolute; right: 12px; top: 12px; z-index: 15; display:flex; gap:8px; }
+    .game-actions button { width:44px; height:44px; border-radius:50%; border:0; background:rgba(255,255,255,.9); cursor:pointer; font-size:1.08rem; }
+    .message {
+      position:absolute; left:50%; top:21%; transform:translate(-50%,-50%); z-index:13;
+      padding:10px 17px; border-radius:999px; background:rgba(255,255,255,.92); font-weight:900;
+      box-shadow:0 8px 22px rgba(23,37,84,.16); opacity:0; transition:opacity .18s;
+      pointer-events:none; text-align:center;
+    }
+    .message.show { opacity:1; }
+    dialog { border:0; border-radius:24px; padding:0; width:min(470px,calc(100% - 30px)); box-shadow:0 24px 90px rgba(23,37,84,.35); }
+    dialog::backdrop { background:rgba(23,37,84,.48); backdrop-filter:blur(4px); }
+    .dialog-body { padding:28px; text-align:center; }
+    .dialog-body .score-big { font-size:3rem; font-weight:950; color:var(--accent); margin:8px 0; }
+    .dialog-actions { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+    @media (max-width: 650px) {
+      .mode-grid { grid-template-columns:1fr; }
+      .mode-card { min-height:140px; }
+      .hud { grid-template-columns:repeat(3,1fr); }
+      .stat:nth-child(4), .stat:nth-child(5) { grid-column:span 1; }
+      .balloon { width:68px; height:81px; font-size:1.8rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .balloon { animation-duration: 16s !important; }
+      * { scroll-behavior:auto !important; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section id="menuScreen" class="screen" aria-labelledby="title">
+      <div class="panel">
+        <p aria-hidden="true">🎼 Music practice game</p>
+        <h1 id="title">Musical Balloon Order</h1>
+        <p class="lead">Choose sharps or flats, then pop the flying letter balloons in the correct musical order. Wrong choices cost a life, so look carefully.</p>
+        <div class="mode-grid" aria-label="Choose game mode">
+          <button class="mode-card sharps" data-mode="sharps" hx-on:click="window.musicGame.chooseMode('sharps')">
+            <span class="symbol">♯</span><strong>Order of Sharps</strong><small>F · C · G · D · A · E · B</small>
+          </button>
+          <button class="mode-card flats" data-mode="flats" hx-on:click="window.musicGame.chooseMode('flats')">
+            <span class="symbol">♭</span><strong>Order of Flats</strong><small>B · E · A · D · G · C · F</small>
+          </button>
+        </div>
+        <div class="setup-row">
+          <label for="level"><strong>Starting level</strong></label>
+          <select id="level">
+            <option value="1">Level 1 · Slow</option>
+            <option value="2">Level 2 · Steady</option>
+            <option value="3">Level 3 · Quick</option>
+            <option value="4">Level 4 · Fast</option>
+          </select>
+          <span id="selectionHint" aria-live="polite">Select a mode tile to begin.</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="gameScreen" aria-label="Balloon game">
+      <div class="game-shell">
+        <header class="hud">
+          <div class="stat"><span>Mode</span><strong id="modeLabel">Sharps</strong></div>
+          <div class="stat"><span>Level</span><strong id="levelLabel">1</strong></div>
+          <div class="stat"><span>Score</span><strong id="scoreLabel">0</strong></div>
+          <div class="stat"><span>Streak</span><strong id="streakLabel">0</strong></div>
+          <div class="stat"><span>Lives</span><strong id="livesLabel">♥ ♥ ♥</strong></div>
+        </header>
+        <div id="progressWrap" class="progress-wrap">
+          <div id="instruction" style="text-align:center;font-weight:800">Pop F next</div>
+          <div id="sequence" class="sequence" aria-label="Current sequence"></div>
+          <div id="revealedSequence" class="sequence" aria-label="Correct letters popped" style="display:none"></div>
+        </div>
+        <div id="gameArea" class="game-area">
+          <div class="cloud" style="left:8%;top:18%"></div><div class="cloud" style="right:9%;top:38%;transform:scale(.75)"></div>
+          <div class="game-actions">
+            <button id="pauseButton" aria-label="Pause game" title="Pause">Ⅱ</button>
+            <button id="soundButton" aria-label="Turn sound off" title="Sound">🔊</button>
+            <button id="homeButton" aria-label="Return to menu" title="Home">⌂</button>
+          </div>
+          <div id="message" class="message" role="status" aria-live="polite"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="resultDialog">
+    <div class="dialog-body">
+      <div id="resultIcon" style="font-size:3rem">🏆</div>
+      <h2 id="resultTitle">Sequence complete!</h2>
+      <p id="resultText">Great listening and recall.</p>
+      <div id="finalScore" class="score-big">0</div>
+      <div class="dialog-actions">
+        <button class="primary" id="nextButton">Next level</button>
+        <button class="secondary" id="replayButton">Play again</button>
+        <button class="secondary" id="menuButton">Choose mode</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script>
+  (() => {
+    'use strict';
+    const ORDERS = { sharps: ['F','C','G','D','A','E','B'], flats: ['B','E','A','D','G','C','F'] };
+    const LEVELS = {
+      1: { duration: 12.5, spawn: 1250, points: 10 },
+      2: { duration: 10.0, spawn: 1020, points: 15 },
+      3: { duration: 7.8, spawn: 820, points: 20 },
+      4: { duration: 5.8, spawn: 650, points: 30 }
+    };
+    const COLORS = ['#ef4444','#8b5cf6','#0ea5e9','#14b8a6','#f59e0b','#ec4899','#22c55e'];
+    const $ = id => document.getElementById(id);
+    const state = { mode:null, level:1, index:0, score:0, streak:0, lives:3, running:false, paused:false, sound:true, spawnTimer:null, messageTimer:null };
+    let audioContext = null;
+
+    function chooseMode(mode) {
+      state.mode = mode;
+      state.level = Number($('level').value);
+      $('selectionHint').textContent = `${mode === 'sharps' ? 'Sharps' : 'Flats'} selected. Starting Level ${state.level}.`;
+      setTimeout(startGame, 180);
+    }
+    function startGame() {
+      clearGame();
+      Object.assign(state, { index:0, score:0, streak:0, lives:3, running:true, paused:false });
+      $('menuScreen').style.display = 'none';
+      $('gameScreen').style.display = 'block';
+      $('modeLabel').textContent = state.mode === 'sharps' ? 'Sharps ♯' : 'Flats ♭';
+      updateHud(); renderSequence(); updateLevelDisplay(); scheduleSpawn(250);
+      announce(state.level === 4 ? 'Recall the order from memory!' : `Find ${target()} first`);
+    }
+    function target() { return ORDERS[state.mode][state.index]; }
+    function scheduleSpawn(delay = LEVELS[state.level].spawn) {
+      clearTimeout(state.spawnTimer);
+      if (!state.running || state.paused) return;
+      state.spawnTimer = setTimeout(() => { spawnBalloon(); scheduleSpawn(); }, delay);
+    }
+    function spawnBalloon() {
+      if (!state.running || state.paused) return;
+      const order = ORDERS[state.mode];
+      const letter = chooseLetter(order);
+      const balloon = document.createElement('button');
+      balloon.className = 'balloon';
+      balloon.type = 'button';
+      balloon.textContent = letter;
+      balloon.dataset.letter = letter;
+      balloon.setAttribute('aria-label', `Balloon ${letter}`);
+      balloon.style.setProperty('--color', COLORS[Math.floor(Math.random()*COLORS.length)]);
+      balloon.style.left = `${4 + Math.random()*84}%`;
+      balloon.style.animationDuration = `${LEVELS[state.level].duration * (.86 + Math.random()*.28)}s`;
+      balloon.addEventListener('click', () => selectBalloon(balloon));
+      balloon.addEventListener('animationend', () => balloon.remove());
+      $('gameArea').appendChild(balloon);
+    }
+    function chooseLetter(order) {
+      // Bias some balloons toward the required answer so the game remains fair.
+      return Math.random() < .36 ? target() : order[Math.floor(Math.random()*order.length)];
+    }
+    function selectBalloon(balloon) {
+      if (!state.running || state.paused || balloon.disabled) return;
+      balloon.disabled = true;
+      if (balloon.dataset.letter === target()) {
+        state.streak++;
+        state.score += LEVELS[state.level].points + Math.min(20, (state.streak-1)*2);
+        state.index++;
+        balloon.classList.add('correct');
+        tone(620 + state.index*55, .09);
+        if (state.level === 4) {
+          announce(state.index === 7 ? 'Perfect sequence!' : 'Correct! Remember the next letter.');
+        } else {
+          announce(state.index === 7 ? 'Perfect sequence!' : `Correct! Find ${target()}`);
+        }
+        setTimeout(() => balloon.remove(), 240);
+		// Refresh the Level 4 display immediately
+		updateHud();
+		renderSequence();
+		updateLevelDisplay();
+		 
+		// Give the user a moment to see the final letter
+		// before showing the completion dialog
+		if (state.index === 7) {
+		return setTimeout(() => endRound(true), 450);
+		}      } else {
+        state.lives--; state.streak = 0;
+        balloon.disabled = false; balloon.classList.add('wrong');
+        setTimeout(() => balloon.classList.remove('wrong'), 300);
+        tone(170, .16);
+        announce(state.level === 4
+          ? `${balloon.dataset.letter} is not next. Try again from memory.`
+          : `Not ${balloon.dataset.letter}. Look for ${target()}.`);
+        if (state.lives <= 0) return endRound(false);
+      }
+      updateHud(); renderSequence(); updateLevelDisplay();
+    }
+    function updateLevelDisplay() {
+      const instruction = $('instruction');
+      const sequence = $('sequence');
+      const revealed = $('revealedSequence');
+
+      if (state.level <= 2) {
+        instruction.style.display = 'block';
+        sequence.style.display = 'flex';
+        revealed.style.display = 'none';
+      } else if (state.level === 3) {
+        instruction.style.display = 'block';
+        sequence.style.display = 'none';
+        revealed.style.display = 'none';
+      } else {
+        instruction.style.display = 'none';
+        sequence.style.display = 'none';
+        revealed.style.display = 'flex';
+        const completed = ORDERS[state.mode].slice(0, state.index);
+        revealed.innerHTML = completed.length
+          ? completed.map(l => `<span class="note-chip done">${l}${state.mode === 'sharps' ? '♯' : '♭'}</span>`).join('')
+          : '<span style="color:var(--muted);font-weight:800">Correct popped letters will appear here</span>';
+      }
+    }
+    function updateHud() {
+      $('levelLabel').textContent = state.level;
+      $('scoreLabel').textContent = state.score;
+      $('streakLabel').textContent = state.streak;
+      $('livesLabel').textContent = '♥ '.repeat(state.lives).trim() || '0';
+      if (state.running && state.index < 7) $('instruction').textContent = `Pop ${target()} next`;
+    }
+    function renderSequence() {
+      $('sequence').innerHTML = ORDERS[state.mode].map((l,i) =>
+        `<span class="note-chip ${i < state.index ? 'done' : i === state.index ? 'current' : ''}">${l}${state.mode === 'sharps' ? '♯' : '♭'}</span>`
+      ).join('');
+    }
+    function announce(text) {
+      const el = $('message'); el.textContent = text; el.classList.add('show');
+      clearTimeout(state.messageTimer); state.messageTimer = setTimeout(() => el.classList.remove('show'), 1100);
+    }
+    function togglePause() {
+      if (!state.running) return;
+      state.paused = !state.paused;
+      $('pauseButton').textContent = state.paused ? '▶' : 'Ⅱ';
+      $('pauseButton').setAttribute('aria-label', state.paused ? 'Resume game' : 'Pause game');
+      document.querySelectorAll('.balloon').forEach(b => b.style.animationPlayState = state.paused ? 'paused' : 'running');
+      if (state.paused) { clearTimeout(state.spawnTimer); announce('Paused'); }
+      else { announce('Go!'); scheduleSpawn(300); }
+    }
+    function endRound(won) {
+      state.running = false; clearTimeout(state.spawnTimer);
+      document.querySelectorAll('.balloon').forEach(b => b.remove());
+      $('resultIcon').textContent = won ? '🏆' : '🎵';
+      $('resultTitle').textContent = won ? 'Sequence complete!' : 'Keep practicing!';
+      $('resultText').textContent = won ? `Hurray! You completed the order of ${state.mode}.` : `The next letter was ${target()}.`;
+      $('finalScore').textContent = `${state.score} points`;
+      $('nextButton').style.display = won && state.level < 4 ? 'inline-block' : 'none';
+      $('resultDialog').showModal();
+    }
+    function clearGame() {
+      clearTimeout(state.spawnTimer); clearTimeout(state.messageTimer);
+      document.querySelectorAll('.balloon').forEach(b => b.remove());
+      if ($('resultDialog').open) $('resultDialog').close();
+    }
+    function goHome() {
+      state.running = false; clearGame();
+      $('gameScreen').style.display = 'none'; $('menuScreen').style.display = 'grid';
+    }
+    function tone(frequency, duration) {
+      if (!state.sound) return;
+      try {
+        audioContext ||= new (window.AudioContext || window.webkitAudioContext)();
+        const osc = audioContext.createOscillator(), gain = audioContext.createGain();
+        osc.frequency.value = frequency; osc.type = 'sine';
+        gain.gain.setValueAtTime(.07, audioContext.currentTime);
+        gain.gain.exponentialRampToValueAtTime(.001, audioContext.currentTime + duration);
+        osc.connect(gain).connect(audioContext.destination); osc.start(); osc.stop(audioContext.currentTime + duration);
+      } catch (_) { /* Sound is optional. */ }
+    }
+    $('pauseButton').addEventListener('click', togglePause);
+    $('soundButton').addEventListener('click', () => {
+      state.sound = !state.sound; $('soundButton').textContent = state.sound ? '🔊' : '🔇';
+      $('soundButton').setAttribute('aria-label', state.sound ? 'Turn sound off' : 'Turn sound on');
+    });
+    $('homeButton').addEventListener('click', goHome);
+    $('replayButton').addEventListener('click', startGame);
+    $('menuButton').addEventListener('click', goHome);
+    $('nextButton').addEventListener('click', () => { state.level++; $('level').value = state.level; startGame(); });
+    window.addEventListener('blur', () => { if (state.running && !state.paused) togglePause(); });
+    window.addEventListener('keydown', e => { if (e.key.toLowerCase() === 'p') togglePause(); });
+    window.musicGame = { chooseMode };
+  })();
+  </script>
+</body>
+</html>
